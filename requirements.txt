@@ -1,0 +1,3 @@
+PyMuPDF
+pymupdf4llm
+python-docx
