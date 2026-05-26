@@ -15,14 +15,19 @@ OUTPUT_DIR = "output"
 CHUNKS_DIR = "chunks"
 VALID_MAJOR_RANGE = range(1, 100)
 
-HEADING_REGEX = re.compile(
-    r'^(?:#+\s*)?(?:\*\*\s*)?(?:Chapter\s+)?(\d+(?:\.\d+)*)(?:[\s:-]+(.*?))?(?:\s*\*\*)?$',
+MD_HEADING_REGEX = re.compile(
+    r'^(#+)\s*(?:\*\*\s*)?(.*?)(?:\s*\*\*)?$'
+)
+
+EXPLICIT_NUM_REGEX = re.compile(
+    r'^(?:Chapter|Section)?\s*(\d+(?:\.\d+)*)\.?(?:[\s:-]+(.*))?$',
     re.IGNORECASE
 )
 
 TOC_IGNORE_REGEX = re.compile(r'\.{3,}\s*\d+$')
 UNIT_ONLY_REGEX = re.compile(
-    r'^\d+\s*(MHz|GHz|W|V|A|mV|mA)$', re.IGNORECASE
+    r'^\d+(?:\.\d+)?\s*(MHz|GHz|W|V|A|mV|mA|s|ns|ms|us|bytes|KB|MB|GB)$',
+    re.IGNORECASE
 )
 
 IGNORE_PATTERNS = [
@@ -39,6 +44,51 @@ BAD_KEYWORDS = [
     "initial nda",
     "revision history",
 ]
+
+
+# -----------------------------
+# Heading & Section Number Tracker
+# -----------------------------
+class SectionNumberTracker:
+    def __init__(self, max_depth=10):
+        self.current_nums = [0] * max_depth
+
+    def sync(self, section_num: str):
+        """Synchronize tracker with an explicit section number (e.g., '1.2.3')."""
+        parts = section_num.split('.')
+        for i, part in enumerate(parts):
+            if i < len(self.current_nums):
+                try:
+                    self.current_nums[i] = int(part)
+                except ValueError:
+                    self.current_nums[i] = 1  # Fallback
+        # Reset subsequent levels
+        for i in range(len(parts), len(self.current_nums)):
+            self.current_nums[i] = 0
+
+    def generate(self, level: int) -> str:
+        """Generate a pseudo-section number for a given level (1-indexed)."""
+        idx = level - 1
+        if idx >= len(self.current_nums):
+            idx = len(self.current_nums) - 1
+            
+        # Increment the target level
+        self.current_nums[idx] += 1
+        
+        # Reset all sub-levels
+        for i in range(idx + 1, len(self.current_nums)):
+            self.current_nums[i] = 0
+            
+        # Construct the section number string
+        parts = []
+        for i in range(level):
+            val = self.current_nums[i]
+            if val == 0:
+                self.current_nums[i] = 1
+                val = 1
+            parts.append(str(val))
+            
+        return ".".join(parts)
 
 
 # -----------------------------
@@ -80,6 +130,14 @@ def is_valid_heading(section_num: str, title: str) -> bool:
     if major not in VALID_MAJOR_RANGE:
         return False
 
+    # Heuristic: Real headings are rarely excessively long
+    if len(title) > 120:
+        return False
+
+    # Heuristic: Real headings must contain some letters/numbers
+    if not re.search(r'[a-zA-Z0-9\u4e00-\u9fa5]', title):
+        return False
+
     full_line = f"{section_num} {title}".strip()
     if UNIT_ONLY_REGEX.match(full_line):
         return False
@@ -116,6 +174,13 @@ def extract_pdf_lines(file_path: str):
     return lines
 
 
+def is_bold_paragraph(para) -> bool:
+    runs = [r for r in para.runs if r.text.strip()]
+    if not runs:
+        return False
+    return all(run.bold for run in runs)
+
+
 def extract_docx_lines(file_path: str):
     doc = Document(file_path)
     lines = []
@@ -123,7 +188,27 @@ def extract_docx_lines(file_path: str):
     page_num = 1
     for para in doc.paragraphs:
         line = para.text.strip()
-        if not is_ignored(line, is_markdown=False):
+        if not line:
+            continue
+
+        # Convert paragraph styles to markdown headers
+        if para.style and para.style.name:
+            style_name = para.style.name
+            if style_name.startswith('Heading '):
+                try:
+                    level = int(style_name.split(' ')[1])
+                    line = '#' * level + ' ' + line
+                except ValueError:
+                    pass
+            elif style_name == 'Title':
+                line = '# ' + line
+            elif style_name == 'Subtitle':
+                line = '## ' + line
+        # Fallback: if paragraph is short and entirely bold, treat as a heading
+        elif len(line) < 80 and is_bold_paragraph(para):
+            line = '## ' + line
+
+        if not is_ignored(line, is_markdown=True):
             lines.append((page_num, line))
 
     return merge_split_headings(lines)
@@ -162,35 +247,66 @@ def parse_into_chunks(lines, source_file):
         "page_start": 1,
     }
 
+    tracker = SectionNumberTracker()
+
     for page_num, line in lines:
         clean_line = line.strip()
-        match = HEADING_REGEX.match(clean_line)
+        
+        is_heading = False
+        section_num = ""
+        title = ""
 
-        if match:
-            section_num = match.group(1)
-            raw_title = match.group(2) or ""
-            title = raw_title.replace('**', '').strip()
+        # First try to match markdown headings
+        md_match = MD_HEADING_REGEX.match(clean_line)
+        if md_match:
+            level = len(md_match.group(1))
+            title_text = md_match.group(2).strip()
+            
+            # Clean title from any markdown decorators (e.g. bold/italic)
+            title_text = re.sub(r'^[\*_#\s]+|[\*_#\s]+$', '', title_text).strip()
+            
+            # Check if title starts with explicit section number
+            num_match = EXPLICIT_NUM_REGEX.match(title_text)
+            if num_match:
+                section_num = num_match.group(1)
+                title = num_match.group(2) or "Overview"
+                title = re.sub(r'^[\*_#\s]+|[\*_#\s]+$', '', title).strip()
+                if is_valid_heading(section_num, title):
+                    tracker.sync(section_num)
+                    is_heading = True
+            else:
+                title = title_text
+                section_num = tracker.generate(level)
+                if is_valid_heading(section_num, title):
+                    is_heading = True
+        else:
+            # Check if it has an explicit section number without markdown prefix
+            num_match = EXPLICIT_NUM_REGEX.match(clean_line)
+            if num_match:
+                section_num = num_match.group(1)
+                title = num_match.group(2) or "Overview"
+                title = re.sub(r'^[\*_#\s]+|[\*_#\s]+$', '', title).strip()
+                if is_valid_heading(section_num, title):
+                    tracker.sync(section_num)
+                    is_heading = True
 
-            if not title:
-                title = "Overview"
+        if is_heading:
+            if current["content"] or current["number"] != "0":
+                chunks.append({
+                    "number": current["number"],
+                    "title": current["title"],
+                    "content": "\n".join(current["content"]).strip(),
+                    "page_start": current["page_start"],
+                    "source": source_file,
+                })
 
-            if is_valid_heading(section_num, title):
-                if current["content"] or current["number"] != "0":
-                    chunks.append({
-                        "number": current["number"],
-                        "title": current["title"],
-                        "content": "\n".join(current["content"]).strip(),
-                        "page_start": current["page_start"],
-                        "source": source_file,
-                    })
-
-                current = {
-                    "number": section_num,
-                    "title": title,
-                    "content": [],
-                    "page_start": page_num,
-                }
-                continue
+            current = {
+                "number": section_num,
+                "title": title,
+                "content": [],
+                "page_start": page_num,
+            }
+            continue
 
         current["content"].append(line)
 
