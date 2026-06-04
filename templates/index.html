@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>文件結構化與管理系統 | Document Structuring System</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Marked.js for Markdown parsing -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- Custom Style -->
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- SIDEBAR (Left Panel) -->
+        <aside class="sidebar">
+            <div class="brand">
+                <i data-lucide="cpu" class="brand-icon"></i>
+                <div class="brand-text">
+                    <h1>Antigravity</h1>
+                    <span>DocParser & DB</span>
+                </div>
+            </div>
+
+            <!-- Drag & Drop Upload Zone -->
+            <div class="upload-zone" id="upload-zone">
+                <input type="file" id="file-input" accept=".pdf,.docx" style="display: none;">
+                <i data-lucide="upload-cloud" class="upload-icon"></i>
+                <h3>上傳新文件</h3>
+                <p>支援 PDF 或 DOCX (最大 50MB)</p>
+                <div class="progress-container" id="progress-container" style="display: none;">
+                    <div class="progress-bar" id="progress-bar"></div>
+                </div>
+                <div class="upload-status" id="upload-status"></div>
+            </div>
+
+            <!-- Documents List Container -->
+            <div class="docs-section">
+                <div class="section-header">
+                    <h2>已解析文件</h2>
+                    <span class="badge" id="doc-count">0</span>
+                </div>
+                <div class="search-box">
+                    <i data-lucide="search" class="search-icon"></i>
+                    <input type="text" id="doc-filter" placeholder="搜尋檔案名稱...">
+                </div>
+                <div class="docs-list" id="docs-list">
+                    <!-- Loaded dynamically via JS -->
+                    <div class="empty-state">尚無上傳文件</div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- MAIN PANEL (Middle & Right columns combined or separate) -->
+        <main class="main-content">
+            <!-- Table of Contents and Search Area (Middle Panel) -->
+            <section class="navigation-panel">
+                <div class="panel-header">
+                    <div class="tabs">
+                        <button class="tab-btn active" id="tab-toc-btn">
+                            <i data-lucide="list-tree"></i> 章節目錄
+                        </button>
+                        <button class="tab-btn" id="tab-search-btn">
+                            <i data-lucide="file-search"></i> 全域搜尋
+                        </button>
+                    </div>
+                </div>
+
+                <div class="panel-body">
+                    <!-- TOC Content -->
+                    <div class="tab-content active" id="tab-toc">
+                        <div class="active-doc-info" id="active-doc-info" style="display: none;">
+                            <h3 id="active-doc-title">文件標題</h3>
+                            <div class="meta-row">
+                                <span id="active-doc-time">時間</span>
+                                <span class="divider">|</span>
+                                <span id="active-doc-chunks">0 區塊</span>
+                            </div>
+                        </div>
+                        <div class="toc-tree" id="toc-tree">
+                            <div class="empty-state">請選擇左側文件以查看章節目錄</div>
+                        </div>
+                    </div>
+
+                    <!-- Search Content -->
+                    <div class="tab-content" id="tab-search">
+                        <div class="search-form">
+                            <div class="search-input-wrapper">
+                                <input type="text" id="global-search-input" placeholder="輸入關鍵字搜尋全部段落...">
+                                <button id="global-search-btn" class="btn btn-primary">搜尋</button>
+                            </div>
+                            <div class="search-options">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="search-current-only"> 僅在目前選定文件搜尋
+                                </label>
+                            </div>
+                        </div>
+                        <div class="search-results-list" id="search-results-list">
+                            <div class="empty-state">輸入關鍵字並按搜尋</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Reader View (Right Panel) -->
+            <section class="reader-panel">
+                <div class="reader-header" id="reader-header" style="display: none;">
+                    <div class="chunk-title-area">
+                        <div class="chunk-sec-num" id="reader-sec-num">1.0</div>
+                        <h2 class="chunk-title" id="reader-title">章節標題</h2>
+                    </div>
+                    <div class="reader-actions">
+                        <button class="btn btn-icon" id="copy-markdown-btn" title="複製 Markdown 內容">
+                            <i data-lucide="copy"></i> 複製
+                        </button>
+                        <a class="btn btn-icon" id="download-chunk-btn" target="_blank" title="下載實體 Markdown 檔案">
+                            <i data-lucide="download"></i> 下載
+                        </a>
+                    </div>
+                </div>
+
+                <div class="reader-meta" id="reader-meta" style="display: none;">
+                    <div class="meta-item">
+                        <i data-lucide="file-text"></i>
+                        <span id="reader-meta-source">source_file.pdf</span>
+                    </div>
+                    <div class="meta-item">
+                        <i data-lucide="book-open"></i>
+                        <span>起始頁面: <strong id="reader-meta-page">1</strong></span>
+                    </div>
+                </div>
+
+                <div class="reader-body" id="reader-body">
+                    <div class="reader-placeholder">
+                        <i data-lucide="book-open-check" class="placeholder-icon"></i>
+                        <h2>閱讀器</h2>
+                        <p>在左側章節目錄點擊任一章節，或使用全域搜尋，即可在此顯示結構化的 Markdown 內容與元資料。</p>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Confirm Dialog Modal -->
+    <div class="modal" id="confirm-modal" style="display: none;">
+        <div class="modal-content">
+            <h3>確定要刪除此文件？</h3>
+            <p>這將會從資料庫移除此文件所有結構化資料，並會刪除實體生成的 Markdown 區塊檔案。此動作無法復原！</p>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="confirm-cancel">取消</button>
+                <button class="btn btn-danger" id="confirm-ok">確定刪除</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom Script -->
+    <script src="/static/js/app.js"></script>
+    <script>
+        // Initialize Lucide icons on load
+        document.addEventListener("DOMContentLoaded", function() {
+            lucide.createIcons();
+        });
+    </script>
+</body>
+</html>

@@ -1,28 +1,30 @@
-# Document Parser for LLM & RAG (文件解析工具)
+# Document Structuring Tool (文件結構化與管理工具)
 
-This Python script is designed to parse `.pdf` and `.docx` documents and split them into structured, chunked Markdown files based on section headings. It is highly optimized for preparing documentation for Large Language Models (LLMs) and Retrieval-Augmented Generation (RAG) systems.
+這是一個用來解析 PDF 與 Word (.docx) 文件並進行結構化分塊的工具。它能自動識別章節標題將長文件切碎為 Markdown 區塊，並提供了一個網頁介面（WebUI），讓你可以方便地透過瀏覽器上傳文件、瀏覽目錄結構、進行全域內文搜尋以及下載/複製切片內容。
 
-本 Python 腳本專為解析 `.pdf` 與 `.docx` 文件所設計，能夠依據章節標題將文件切割並轉換為結構化的 Markdown 檔案。此工具非常適合用於為大型語言模型 (LLM) 以及檢索增強生成 (RAG) 系統準備知識庫文件。
-
----
-
-## Features (功能特色)
-
-- **Multi-Format Support (支援多格式)**: Parses both `.pdf` (using `pymupdf4llm`) and `.docx` (using `python-docx`) files.
-- **Intelligent Chunking (智慧分塊)**: Automatically identifies headings and splits content into logical sections. Seamlessly supports **numbered, unnumbered, and hybrid** documents by dynamically generating pseudo-section numbers (e.g., `1.1`, `1.2`) based on heading depth while synchronizing with explicit ones.
-  - **支援無編號與混合型文件**：會依標題層級（如 `#` 的數量）自動生成偽章節編號，並在遇到原有編號時自動同步計數器。
-- **Word Formatting Support (Word 結構辨識)**: Automatically converts Word Heading styles (`Heading 1-9`, `Title`, `Subtitle`) into standard Markdown headers. Includes a bold-paragraph fallback to capture unstyled bold headers as document sections.
-  - **自動轉換 Word 標題樣式**：能自動將 Word 的標題樣式或短粗體段落轉化為 Markdown 標題以進行切割。
-- **Metadata Extraction (元資料萃取)**: Each chunk includes metadata such as the source file name, section number, and starting page.
-- **Noise Filtering (過濾雜訊)**: Automatically ignores common page noise like "Table of Contents", headers/footers, "Page X", or confidential stamps. Optimized specifically for BIOS specs (e.g., ignoring timing/voltage measurements like `3.3 V`, `500 ns`).
-- **Index Generation (生成目錄)**: Automatically creates a `toc.json` and a beautifully structured `index.md` linking to all generated chunks.
+所有的解析結果除了會產出實體 Markdown 檔案外，也會自動同步存入本機的 SQLite 資料庫，方便日後整理與快速查詢。
 
 ---
 
-## Installation (安裝說明)
+## 功能特色
 
-1. Clone or download this repository. (下載或複製此專案)
-2. Install the required dependencies using `pip`. (使用 `pip` 安裝相依套件):
+* **雙格式支援**：支援 `.pdf` (基於 `pymupdf4llm`) 與 `.docx` (基於 `python-docx`) 文件解析。
+* **智慧標題分塊**：
+  * 自動辨識各級標題（例如 `#`, `##` 或 Word 中的 `Heading 1-9`、`Title` 樣式）進行切割。
+  * 自動產生偽章節編號（如遇到無編號標題會依層級產生 `1.1`, `1.2` 等序號），並在遇到顯式編號時自動同步計數器。
+* **雜訊過濾**：自動過濾頁首、頁尾、頁碼、機密標記及目錄（Table of Contents）等無效雜訊。
+* **網頁化管理介面 (WebUI)**：
+  * **拖曳上傳**：直覺的文件上傳與即時解析進度條。
+  * **章節目錄樹**：以樹狀目錄直觀展示文件結構。
+  * **閱讀器**：直接在網頁上以排版美觀的 HTML 格式閱讀 Markdown 內容，支援一鍵複製與下載實體 `.md` 檔案。
+  * **全域搜尋**：支援跨文件或針對單一文件的內文關鍵字快速檢索。
+* **SQLite 本機資料庫**：所有解析出的段落、標題、頁碼、檔案路徑都會寫入 `documents.db`，查詢快速且不佔用外部資料庫伺服器。
+
+---
+
+## 安裝步驟
+
+安裝所需的 Python 套件：
 
 ```bash
 pip install -r requirements.txt
@@ -30,26 +32,55 @@ pip install -r requirements.txt
 
 ---
 
-## Usage (使用方法)
+## 使用說明
 
-Run the script by passing the target file as an argument.
-透過命令列執行腳本，並將目標檔案作為參數傳入。
+### 1. 啟動網頁介面 (推薦)
+
+執行後端伺服器：
 
 ```bash
-python parse_document.py <input_file.pdf_or_docx>
+python app.py
 ```
 
-**Example (範例)**:
+啟動後，使用瀏覽器開啟以下網址即可使用完整的上傳與管理功能：
+`http://localhost:5000`
+
+### 2. 使用命令列單獨解析
+
+如果您只想透過指令快速解析單一文件：
+
 ```bash
-python parse_document.py sample.pdf
+python parse_document.py <文件路徑.pdf_或_docx>
+```
+
+解析完成後，會直接在 `output/` 目錄下生成結構化的 markdown 檔案與 `index.md` 索引。
+
+---
+
+## 專案結構
+
+```text
+├── app.py              # Web 伺服器 (Flask) 的進入點
+├── database.py         # 資料庫存取模組 (SQLite 建立、儲存、查詢、刪除)
+├── parse_document.py   # 文件解析與標題切割核心邏輯
+├── test_parser.py      # 解析器單元測試
+├── requirements.txt    # 專案套件相依清單
+├── documents.db        # SQLite 資料庫檔案 (執行後自動生成)
+├── templates/          # WebUI HTML 模板
+├── static/             # CSS 樣式與前端 JS 腳本
+├── uploads/            # 上傳時的暫存資料夾
+└── output/             # 實體 Markdown 切片輸出目錄 (依 document ID 分門別類)
+    └── <document_id>/
+        ├── index.md    # 該文件的 Markdown 索引檔
+        ├── toc.json    # 該文件的目錄結構資料
+        └── chunks/     # 存放該文件所有的段落 Markdown 檔案
 ```
 
 ---
 
-## Running Tests (執行單元測試)
+## 執行測試
 
-A comprehensive unit test suite has been added to ensure robust parsing logic across numbered, unnumbered, and hybrid documents, as well as timing/voltage measurement exclusions.
-專案內含完整的單元測試，可用於驗證編號、無編號、混合文件以及硬體參數過濾的解析邏輯。
+本專案附帶單元測試，用以驗證標題識別、編號同步、雜訊過濾等核心邏輯：
 
 ```bash
 python test_parser.py
@@ -57,45 +88,90 @@ python test_parser.py
 
 ---
 
-## Output Structure (輸出結構)
+# Document Structuring Tool (English Version)
 
-After processing, an `output` folder will be generated in the same directory:
-執行後，會在相同目錄下自動建立 `output` 資料夾：
+This tool parses PDF and Word (.docx) documents and splits them into structured Markdown chunks. It automatically detects section headings to slice long documents into readable Markdown files and provides a Web UI for you to upload documents, browse table of contents (TOC) trees, perform global text searches, and copy or download the generated markdown chunks.
 
-```text
-output/
-├── toc.json          # JSON format table of contents (JSON 格式目錄)
-├── index.md          # Markdown knowledge base index (Markdown 知識庫入口)
-└── chunks/           # Folder containing all parsed markdown sections (存放所有解析出的 Markdown 區塊)
-    ├── 1_Introduction.md
-    ├── 1.1_Background.md
-    └── ...
-```
+In addition to writing the physical Markdown files, all parsing results are synchronized into a local SQLite database for easy organization and fast lookups.
 
-Each generated Markdown chunk looks like this:
-每個生成的 Markdown 區塊大致長這樣：
+---
 
-```markdown
-# 1.1 Background
+## Features
 
-metadata:
-- source file: sample.pdf
-- section number: 1.1
-- page start: 3
+* **Multi-Format Support**: Parse both `.pdf` (powered by `pymupdf4llm`) and `.docx` (powered by `python-docx`) files.
+* **Intelligent Heading Chunking**:
+  * Automatically identifies heading levels (e.g., `#`, `##` in Markdown, or `Heading 1-9`, `Title` styles in Word) for clean slicing.
+  * Generates pseudo-section numbers dynamically for unnumbered headings (e.g., `1.1`, `1.2`), and synchronizes the counters when explicit ones are encountered.
+* **Noise Filtering**: Automatically filters out footers, headers, page numbers, confidential stamps, and Tables of Contents.
+* **Web UI Management Dashboard**:
+  * **Drag & Drop Upload**: Upload files easily with an interactive progress indicator.
+  * **Interactive TOC Tree**: Explore document hierarchy with collapsible section nodes.
+  * **Reader Panel**: Read chunks as formatted HTML with instant "Copy Markdown" and "Download File" buttons.
+  * **Global Search**: Search terms across all files or target the active document only.
+* **Local SQLite Database**: Stores all parsed text, titles, pages, and file paths in `documents.db` for zero-setup, fast queries.
 
-content:
-(Actual content of the section goes here... / 實際章節內容...)
+---
+
+## Installation
+
+Install the required Python dependencies:
+
+```bash
+pip install -r requirements.txt
 ```
 
 ---
 
-## Advanced Configuration (進階設定)
+## Usage Guide
 
-You can customize the parsing logic directly within `parse_document.py`:
-您可以在 `parse_document.py` 內直接修改以下參數以符合您的文件：
+### 1. Launch the Web UI (Recommended)
 
-- `IGNORE_PATTERNS`: Add or remove regular expressions to ignore specific page noise (e.g., footers). (自訂要忽略的字串規則)
-- `BAD_KEYWORDS`: Ignore sections containing specific keywords (e.g., "revision history"). (略過包含特定關鍵字的無效章節)
-- `MD_HEADING_REGEX`: Matches markdown headings and extracts level and text. (用於識別 Markdown 標題與層級的正規表達式)
-- `EXPLICIT_NUM_REGEX`: Identifies explicit section numbers to synchronize the counter. (用於匹配顯式編號的正規表達式)
-- `UNIT_ONLY_REGEX`: Filters out typical measurements to avoid false-positive headings. (過濾電壓與時間單位的正規表達式)
+Run the backend web server:
+
+```bash
+python app.py
+```
+
+Once started, open your browser and navigate to:
+`http://localhost:5000`
+
+### 2. Slicing via CLI
+
+If you prefer to run parsing workflows directly from the terminal:
+
+```bash
+python parse_document.py <path_to_file.pdf_or_docx>
+```
+
+The output will be created inside the `output/` directory, including structured markdown files and an `index.md` catalog.
+
+---
+
+## Project Structure
+
+```text
+├── app.py              # Flask Web Server entry point
+├── database.py         # SQLite database connector (saves, searches, and deletes docs)
+├── parse_document.py   # Document parsing and slicing core logic
+├── test_parser.py      # Parser logic unit tests
+├── requirements.txt    # Python dependencies list
+├── documents.db        # SQLite database file (auto-generated)
+├── templates/          # HTML templates for the Web UI
+├── static/             # CSS styling and frontend JavaScript application
+├── uploads/            # Temporary upload workspace folder
+└── output/             # Sliced Markdown output directory (organized by document ID)
+    └── <document_id>/
+        ├── index.md    # Markdown table of contents index
+        ├── toc.json    # TOC json index file
+        └── chunks/     # Markdown slices folder
+```
+
+---
+
+## Running Tests
+
+To execute the suite of unit tests verifying heading detection, counter syncing, and measurement noise filters:
+
+```bash
+python test_parser.py
+```
